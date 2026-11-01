@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#f6f7fb">
+    <meta name="description" content="Um espaço pessoal para cuidar das tarefas, hábitos, planos e dinheiro.">
+    <title>Meu ritmo — organização pessoal</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="./src/presentation/styles.css">
+    <script type="module" src="./src/main.js"></script>
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar" id="sidebar" aria-label="Navegação principal">
+        <a class="brand" href="#" data-nav="inicio" aria-label="Meu ritmo, início">
+          <span class="brand-mark" aria-hidden="true"><span></span><span></span><span></span></span>
+          <span>meu<span class="brand-light">ritmo</span></span>
+        </a>
+        <p class="sidebar-date" id="today-label"></p>
+
+        <div class="side-label">SEU ESPAÇO</div>
+        <nav class="navigation" aria-label="Seções">
+          <button class="nav-item is-active" data-nav="inicio"><span class="nav-icon" data-icon="home"></span><span>Visão geral</span></button>
+          <button class="nav-item" data-nav="tarefas"><span class="nav-icon" data-icon="check"></span><span>Tarefas</span><span class="nav-count" id="nav-task-count">0</span></button>
+          <button class="nav-item" data-nav="planner"><span class="nav-icon" data-icon="calendar"></span><span>Planner</span></button>
+          <button class="nav-item" data-nav="habitos"><span class="nav-icon" data-icon="spark"></span><span>Hábitos</span></button>
+          <button class="nav-item" data-nav="financas"><span class="nav-icon" data-icon="wallet"></span><span>Finanças</span></button>
+          <button class="nav-item" data-nav="metas"><span class="nav-icon" data-icon="target"></span><span>Metas</span></button>
+          <button class="nav-item" data-nav="diario"><span class="nav-icon" data-icon="book"></span><span>Diário</span></button>
+        </nav>
+
+        <div class="sidebar-bottom">
+          <div class="privacy-note">
+            <span class="privacy-lock" data-icon="lock"></span>
+            <p>Seu espaço é privado.<br><strong>Os dados ficam neste aparelho.</strong></p>
+          </div>
+          <button class="nav-item theme-toggle" data-action="theme" aria-label="Alternar tema"><span class="nav-icon" data-icon="moon"></span><span>Modo escuro</span></button>
+          <button class="nav-item settings-link" data-nav="ajustes"><span class="nav-icon" data-icon="settings"></span><span>Dados e ajustes</span></button>
+          <div class="profile-card">
+            <span class="avatar">M</span>
+            <span class="profile-name"><strong>Meu espaço</strong><small>Organização pessoal</small></span>
+            <span class="profile-dots" aria-hidden="true">···</span>
+          </div>
+        </div>
+      </aside>
+
+      <main class="main-area">
+        <header class="mobile-topbar">
+          <button class="mobile-menu icon-button" data-action="menu" aria-label="Abrir menu"><span data-icon="menu"></span></button>
+        </header>
+        <div class="mobile-overlay" id="mobile-overlay"></div>
+        <div class="page-content" id="page-content" tabindex="-1"></div>
+      </main>
+    </div>
+
+    <dialog class="modal" id="modal">
+      <div id="modal-content"></div>
+    </dialog>
+    <div class="toast-region" id="toast-region" role="status" aria-live="polite"></div>
+    <input class="visually-hidden" type="file" id="import-file" accept="application/json,.json">
+  </body>
+</html>
