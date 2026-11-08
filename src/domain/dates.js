@@ -9,6 +9,16 @@ export function addDays(dateString, days) {
   return toISODate(date);
 }
 
+export function addMonths(dateString, months) {
+  const date = new Date(`${dateString}T12:00:00`);
+  const day = date.getDate();
+  date.setDate(1);
+  date.setMonth(date.getMonth() + months);
+  const lastDay = new Date(date.getFullYear(), date.getMonth() + 1, 0, 12).getDate();
+  date.setDate(Math.min(day, lastDay));
+  return toISODate(date);
+}
+
 export function startOfWeek(dateString) {
   const date = new Date(`${dateString}T12:00:00`);
   const day = (date.getDay() + 6) % 7;

@@ -4,11 +4,15 @@ import {
   PRIORITIES,
   compareTasksBySchedule,
   formatTaskTime,
+  expandTaskOccurrences,
+  normalizeRecurrence,
   normalizeTask,
   normalizeTaskArea,
   normalizeTaskPriority,
+  capitalizeTaskTitle,
   taskEndDate,
   taskIncludesDate,
+  parseTaskOccurrenceId,
   taskPriorityOrder,
   taskStatus,
 } from "../domain/tasks.js";
@@ -33,6 +37,7 @@ const SECTION_NAMES = {
 };
 const ICONS = {
   home: '<path d="m3 10 9-7 9 7v10a1 1 0 0 1-1 1h-6v-6h-4v6H4a1 1 0 0 1-1-1z"/>',
+  refresh: '<path d="M20 7v5h-5"/><path d="M4 17v-5h5"/><path d="M5.6 9A7 7 0 0 1 17 5l3 2M4 17l3 2a7 7 0 0 0 11.4-4"/>',
   check: '<path d="m5 12 4 4L19 6"/><path d="M20 12v6a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h9"/>',
   calendar: '<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M16 3v4M8 3v4M3 10h18"/>',
   spark: '<path d="m12 3 1.9 5.8L20 11l-6.1 2.2L12 19l-1.9-5.8L4 11l6.1-2.2z"/><path d="m19 14 1 2 2 1-2 1-1 2-1-2-2-1 2-1z"/>',
@@ -60,7 +65,6 @@ const ICONS = {
 
 let state = { tasks: [], habits: [], transactions: [], goals: [], entries: [], theme: "light" };
 let activeSection = "inicio";
-let taskFilter = "Tudo";
 let taskSearch = "";
 let taskView = "weekly";
 let plannerDate = TODAY;
@@ -225,7 +229,22 @@ function render() {
 }
 
 function getTodayTasks() {
-  return state.tasks.filter((task) => taskIncludesDate(task, TODAY));
+  return expandTaskOccurrences(state.tasks, TODAY, TODAY).filter((task) => taskIncludesDate(task, TODAY));
+}
+
+function getTaskForDate(date) {
+  const maxDuration = state.tasks.reduce((longest, task) => {
+    if (task.recurrence || !task.date || !taskEndDate(task)) return longest;
+    const duration = Math.max(0, Math.round((new Date(`${taskEndDate(task)}T12:00:00`) - new Date(`${task.date}T12:00:00`)) / 86400000));
+    return Math.max(longest, duration);
+  }, 0);
+  return expandTaskOccurrences(state.tasks, addDays(date, -maxDuration), date)
+    .filter((task) => taskIncludesDate(task, date));
+}
+
+function getTaskById(id) {
+  const occurrence = parseTaskOccurrenceId(id);
+  return state.tasks.find((task) => task.id === (occurrence?.taskId || id));
 }
 
 function currentMonthTransactions() {
@@ -287,9 +306,13 @@ function renderHome() {
 function taskRow(task) {
   return `<div class="task-row">
     <button class="check-button ${task.done ? "is-done" : ""}" data-action="toggle-task" data-id="${escapeAttr(task.id)}" aria-label="${task.done ? "Reabrir" : "Concluir"} ${escapeAttr(task.title)}">${task.done ? icon("check") : ""}</button>
-    <div class="task-copy"><p class="task-title ${task.done ? "is-done" : ""}">${escapeHTML(task.title)}</p>${task.description ? `<p class="task-description">${escapeHTML(task.description)}</p>` : ""}<div class="task-meta">${task.date && taskEndDate(task) !== task.date ? `<span>${formatDate(task.date)} – ${formatDate(taskEndDate(task))}</span>` : ""}${formatTaskTime(task) ? `<span>${escapeHTML(formatTaskTime(task))}</span>` : ""}${task.area ? `<span class="tag">${escapeHTML(task.area)}</span>` : ""}${task.priority ? `<span class="tag ${task.priority === "Urgente e Importante" ? "priority-alta" : "priority"}">${escapeHTML(task.priority)}</span>` : ""}</div></div>
+    <div class="task-copy"><p class="task-title ${task.done ? "is-done" : ""}">${escapeHTML(task.title)}</p>${task.description ? `<p class="task-description">${escapeHTML(task.description)}</p>` : ""}<div class="task-meta">${task.date && taskEndDate(task) !== task.date ? `<span>${formatDate(task.date)} – ${formatDate(taskEndDate(task))}</span>` : ""}${formatTaskTime(task) ? `<span>${escapeHTML(formatTaskTime(task))}</span>` : ""}${task.recurrence ? `<span class="tag task-recurrence-tag">${icon("refresh")}${recurrenceLabel(task.recurrence.frequency)}</span>` : ""}${task.area ? `<span class="tag">${escapeHTML(task.area)}</span>` : ""}</div></div>
     <div class="task-actions"><button class="small-icon-button" data-action="edit-task" data-id="${escapeAttr(task.id)}" aria-label="Editar ${escapeAttr(task.title)}">${icon("edit")}</button><button class="small-icon-button" data-action="delete-task" data-id="${escapeAttr(task.id)}" aria-label="Excluir ${escapeAttr(task.title)}">${icon("trash")}</button></div>
   </div>`;
+}
+
+function recurrenceLabel(frequency) {
+  return ({ daily: "Diária", weekly: "Semanal", monthly: "Mensal" })[frequency] || "";
 }
 
 function taskViewButtons() {
@@ -302,23 +325,28 @@ function taskViewButtons() {
 }
 
 function taskViewCard(task, showDate = true, draggable = false) {
-  return `<article class="task-view-card ${taskStatus(task) === "done" ? "is-complete" : ""}" ${draggable ? `draggable="true" data-task-card-id="${escapeAttr(task.id)}"` : ""}>
+  return `<article class="task-view-card ${taskStatus(task) === "done" ? "is-complete" : ""}" ${draggable && !task.occurrenceDate ? `draggable="true" data-task-card-id="${escapeAttr(task.id)}"` : ""}>
     <button class="task-view-title" data-action="edit-task" data-id="${escapeAttr(task.id)}">${escapeHTML(task.title)}</button>
-    <div class="task-meta">${showDate ? task.date ? `<span>${escapeHTML(formatDate(task.date, { day: "2-digit", month: "short" }))}</span>` : `<span>Sem data</span>` : ""}${task.time ? `<span>${escapeHTML(formatTaskTime(task))}</span>` : ""}<span class="tag">${escapeHTML(normalizeTaskPriority(task.priority))}</span></div>
+    <div class="task-meta">${showDate ? task.date ? `<span>${escapeHTML(formatDate(task.date, { day: "2-digit", month: "short" }))}</span>` : `<span>Sem data</span>` : ""}${task.time ? `<span>${escapeHTML(formatTaskTime(task))}</span>` : ""}${task.recurrence ? `<span class="tag task-recurrence-tag">${icon("refresh")}${recurrenceLabel(task.recurrence.frequency)}</span>` : ""}</div>
   </article>`;
 }
 
 function renderWeeklyTasks(tasks) {
   const overdueTasks = tasks.filter((task) => task.date && taskEndDate(task) < TODAY && !task.done)
     .sort(compareTasksBySchedule);
-  const overdueColumn = `<section class="task-day-column task-overdue-column"><h2>Em atraso<span>${overdueTasks.length}</span></h2>${overdueTasks.length ? overdueTasks.map((task) => taskViewCard(task, true, true)).join("") : `<p class="task-view-empty">Sem tarefas</p>`}</section>`;
+  const latestOverdueBySeries = new Map();
+  overdueTasks.forEach((task) => {
+    if (task.seriesId) latestOverdueBySeries.set(task.seriesId, task);
+  });
+  const visibleOverdueTasks = overdueTasks.filter((task) => !task.seriesId || latestOverdueBySeries.get(task.seriesId) === task);
+  const overdueColumn = `<section class="task-day-column task-overdue-column"><h2>Em atraso<span>${visibleOverdueTasks.length}</span></h2>${visibleOverdueTasks.length ? visibleOverdueTasks.map((task) => taskViewCard(task, true, true)).join("") : `<p class="task-view-empty">Sem tarefas</p>`}</section>`;
   const dates = Array.from({ length: 4 }, (_, index) => addDays(TODAY, index));
   const days = dates.map((date, index) => {
     const dayTasks = tasks.filter((task) => taskIncludesDate(task, date)).sort((a, b) => (
       (a.time || "99:99").localeCompare(b.time || "99:99") || (a.date || "").localeCompare(b.date || "")
     ));
     const heading = formatDate(date, { weekday: "long", day: "numeric", month: "short" });
-    const todayTasks = state.tasks.filter((task) => taskIncludesDate(task, TODAY));
+    const todayTasks = getTodayTasks();
     const completedToday = todayTasks.filter((task) => task.done).length;
     const progress = index === 0 ? `<span class="task-day-progress" aria-label="${completedToday} de ${todayTasks.length} tarefas concluídas">${completedToday}/${todayTasks.length}</span>` : "";
     return `<section class="task-day-column" data-week-date="${date}"><h2><span class="task-day-heading">${escapeHTML(heading)}${index === 0 ? `<small>Hoje</small>` : ""}</span>${progress}</h2>${dayTasks.length ? dayTasks.map((task) => taskViewCard(task, true, true)).join("") : `<p class="task-view-empty">Sem tarefas</p>`}</section>`;
@@ -359,7 +387,6 @@ function goalMini(goal) {
 }
 
 function renderTasks() {
-  const filters = ["Tudo", "Hoje", "Próximas", "Sem data", "Concluídas"];
   const query = taskSearch.trim().toLocaleLowerCase("pt-BR");
   let allTasks = [...state.tasks];
   if (query) allTasks = allTasks.filter((task) => `${task.title} ${task.area} ${task.priority}`.toLocaleLowerCase("pt-BR").includes(query));
@@ -370,16 +397,13 @@ function renderTasks() {
       <div class="task-view-toolbar">${taskViewButtons()}<label class="search-box">${icon("search")}<input type="search" id="task-search" placeholder="Buscar uma tarefa" value="${escapeAttr(taskSearch)}" aria-label="Buscar uma tarefa"></label></div>
       <div class="task-page-list">${content}</div>`;
   }
-  let tasks = allTasks;
-  if (taskFilter === "Hoje") tasks = tasks.filter((task) => taskIncludesDate(task, TODAY) && !task.done);
-  else if (taskFilter === "Próximas") tasks = tasks.filter((task) => task.date > TODAY && !task.done);
-  else if (taskFilter === "Sem data") tasks = tasks.filter((task) => !task.date && !task.done);
-  else if (taskFilter === "Concluídas") tasks = tasks.filter((task) => task.done);
-  else tasks = tasks.filter((task) => !task.done);
+  const tasks = taskView === "weekly"
+    ? expandTaskOccurrences(allTasks, addDays(TODAY, -30), addDays(TODAY, 3), { includePastFinal: true })
+    : allTasks;
   return `
     ${pageHeading("TUDO COMEÇA POR AQUI", "Tarefas", "Tire as ideias da cabeça e organize o próximo passo.", emptyAction("Nova tarefa", "add-task"))}
     <div class="task-view-toolbar">${taskViewButtons()}</div>
-    <div class="toolbar"><div class="filter-row">${filters.map((filter) => `<button class="filter-chip ${taskFilter === filter ? "is-active" : ""}" data-filter="${escapeAttr(filter)}">${filter}</button>`).join("")}</div><label class="search-box">${icon("search")}<input type="search" id="task-search" placeholder="Buscar uma tarefa" value="${escapeAttr(taskSearch)}" aria-label="Buscar uma tarefa"></label></div>
+    <div class="toolbar"><label class="search-box">${icon("search")}<input type="search" id="task-search" placeholder="Buscar uma tarefa" value="${escapeAttr(taskSearch)}" aria-label="Buscar uma tarefa"></label></div>
     <div class="task-page-list">${renderWeeklyTasks(tasks)}</div>`;
 }
 
@@ -416,8 +440,9 @@ function plannerRangeLabel(dates) {
   return `${formatDate(dates[0], { day: "2-digit", month: "short" })} — ${formatDate(dates[6], { day: "2-digit", month: "short", year: "numeric" })}`;
 }
 
-function plannerTaskCard(task, showTime = false, showDate = false, timedGrid = false, dayIndex = 0, segment = null) {
+function plannerTaskCard(task, showDate = false, timedGrid = false, dayIndex = 0, segment = null) {
   const areaIndex = AREAS.indexOf(normalizeTaskArea(task.area));
+  const recurringOccurrence = Boolean(task.occurrenceDate);
   const minuteOffset = segment?.startMinutes % 60 || 0;
   const startMinutes = segment?.startMinutes ?? (task.time ? Number(task.time.slice(0, 2)) * 60 + Number(task.time.slice(3, 5)) : 0);
   const endMinutes = segment?.endMinutes ?? (task.endTime ? Number(task.endTime.slice(0, 2)) * 60 + Number(task.endTime.slice(3, 5)) : startMinutes + 60);
@@ -428,12 +453,12 @@ function plannerTaskCard(task, showTime = false, showDate = false, timedGrid = f
     : "";
   const segmentDate = segment?.date || task.date || "";
   const segmentTime = segment?.startTime ?? task.time ?? "";
-  const dateHandles = `${segment?.isStart ? `<span class="calendar-resize-handle resize-date-start" data-resize-edge="start-date" aria-hidden="true"></span>` : ""}${segment?.isEnd ? `<span class="calendar-resize-handle resize-date-end" data-resize-edge="end-date" aria-hidden="true"></span>` : ""}`;
-  const timeHandles = timedGrid ? `${segment?.isStart ? `<span class="calendar-resize-handle resize-time-start" data-resize-edge="start-time" aria-hidden="true"></span>` : ""}${segment?.isEnd ? `<span class="calendar-resize-handle resize-time-end" data-resize-edge="end-time" aria-hidden="true"></span>` : ""}` : "";
-  return `<button class="calendar-event area-color-${areaIndex} ${task.done ? "is-complete" : ""} ${timedGrid ? "calendar-event--timed" : ""} ${segment?.continuesBefore ? "continues-before" : ""} ${segment?.continuesAfter ? "continues-after" : ""}"${eventStyle} data-action="edit-task" data-id="${escapeAttr(task.id)}" data-calendar-date="${escapeAttr(segmentDate)}" data-calendar-time="${escapeAttr(segmentTime)}" draggable="true" aria-label="Arrastar ou editar ${escapeAttr(task.title)}${formatTaskTime(task) ? ` no horário ${escapeAttr(formatTaskTime(task))}` : ""}">
-    ${showDate && segmentDate ? `<span class="calendar-event-time">${segment?.isStart ? escapeHTML(formatDate(task.date, { day: "2-digit", month: "short" })) : ""}${segment?.isEnd && taskEndDate(task) !== task.date ? `–${escapeHTML(formatDate(taskEndDate(task), { day: "2-digit", month: "short" }))}` : ""}</span>` : ""}
-    ${showTime && segment?.timeLabel ? `<span class="calendar-event-time">${escapeHTML(segment.timeLabel)}</span>` : showTime && task.time ? `<span class="calendar-event-time">${escapeHTML(formatTaskTime(task))}</span>` : ""}
+  const eventMeta = showDate && segment?.isStart ? formatTaskTime(task) : "";
+  const dateHandles = !recurringOccurrence ? `${segment?.isStart ? `<span class="calendar-resize-handle resize-date-start" data-resize-edge="start-date" aria-hidden="true"></span>` : ""}${segment?.isEnd ? `<span class="calendar-resize-handle resize-date-end" data-resize-edge="end-date" aria-hidden="true"></span>` : ""}` : "";
+  const timeHandles = timedGrid && !recurringOccurrence ? `${segment?.isStart ? `<span class="calendar-resize-handle resize-time-start" data-resize-edge="start-time" aria-hidden="true"></span>` : ""}${segment?.isEnd ? `<span class="calendar-resize-handle resize-time-end" data-resize-edge="end-time" aria-hidden="true"></span>` : ""}` : "";
+  return `<button class="calendar-event area-color-${areaIndex} ${task.done ? "is-complete" : ""} ${timedGrid ? "calendar-event--timed" : ""} ${segment?.continuesBefore ? "continues-before" : ""} ${segment?.continuesAfter ? "continues-after" : ""}"${eventStyle} data-action="edit-task" data-id="${escapeAttr(task.id)}" data-calendar-date="${escapeAttr(segmentDate)}" data-calendar-time="${escapeAttr(segmentTime)}" draggable="${!recurringOccurrence}" aria-label="Editar ${escapeAttr(task.title)}${task.recurrence ? `, repetição ${escapeAttr(recurrenceLabel(task.recurrence.frequency))}` : ""}${formatTaskTime(task) ? ` no horário ${escapeAttr(formatTaskTime(task))}` : ""}">
     <span class="calendar-event-title">${escapeHTML(task.title)}</span>
+    ${showDate && eventMeta ? `<span class="calendar-event-meta">${escapeHTML(eventMeta)}</span>` : ""}
     ${dateHandles}${timeHandles}
   </button>`;
 }
@@ -448,16 +473,16 @@ function renderUntimedLane(dates) {
   return `<div class="calendar-lane-row">
     <div class="calendar-lane-label">Sem horário</div>
     ${dates.map((date) => {
-      const tasks = state.tasks.filter((task) => taskIncludesDate(task, date) && !task.time);
-      return `<div class="calendar-lane-cell" data-calendar-date="${date}">${tasks.map((task) => plannerTaskCard(task, false, false, false, 0, { date, isStart: date === task.date, isEnd: date === taskEndDate(task) })).join("")}<button class="calendar-add-untimed" data-action="add-planner-task" data-date="${date}" aria-label="Adicionar tarefa sem horário em ${formatDate(date, { day: "numeric", month: "long" })}">+</button></div>`;
+      const tasks = getTaskForDate(date).filter((task) => !task.time);
+      return `<div class="calendar-lane-cell" data-calendar-date="${date}">${tasks.map((task) => plannerTaskCard(task, false, false, 0, { date, isStart: date === task.date, isEnd: date === taskEndDate(task) })).join("")}</div>`;
     }).join("")}
   </div>`;
 }
 
 function renderDayWeekGrid(dates) {
   const columns = `54px repeat(${dates.length}, minmax(${plannerView === "day" ? "320px" : "105px"}, 1fr))`;
-  const timedTasks = dates.flatMap((date, dayIndex) => state.tasks
-    .filter((task) => taskIncludesDate(task, date) && task.time)
+  const timedTasks = dates.flatMap((date, dayIndex) => getTaskForDate(date)
+    .filter((task) => task.time)
     .sort((a, b) => a.time.localeCompare(b.time))
     .map((task) => {
       const startDate = task.date;
@@ -468,9 +493,8 @@ function renderDayWeekGrid(dates) {
       const endMinutes = task.endTime
         ? Number(task.endTime.slice(0, 2)) * 60 + Number(task.endTime.slice(3, 5))
         : Math.min(1440, startMinutes + 60);
-      return plannerTaskCard(task, true, false, true, dayIndex, {
-        date, startMinutes, endMinutes, startTime: task.time,
-        timeLabel: formatTaskTime(task), isStart, isEnd,
+      return plannerTaskCard(task, false, true, dayIndex, {
+        date, startMinutes, endMinutes, startTime: task.time, isStart, isEnd,
       });
     })).join("");
   const hours = Array.from({ length: 24 }, (_, hour) => {
@@ -496,13 +520,12 @@ function renderMonthGrid(dates) {
   const headers = weekdays.map((weekday) => `<div class="calendar-month-weekday">${weekday}</div>`).join("");
   const cells = dates.map((date, index) => {
     const inMonth = date.slice(0, 7) === plannerDate.slice(0, 7);
-    const tasks = state.tasks.filter((task) => taskIncludesDate(task, date) && task.time).sort((a, b) => a.time.localeCompare(b.time));
+    const tasks = getTaskForDate(date).filter((task) => task.time).sort((a, b) => a.time.localeCompare(b.time));
     const taskCards = tasks.slice(0, 4).map((task) => {
       const isStart = date === task.date;
       const isEnd = date === taskEndDate(task);
-      return plannerTaskCard(task, true, true, false, 0, {
+      return plannerTaskCard(task, true, false, 0, {
         date, isStart, isEnd, startTime: task.time,
-        timeLabel: formatTaskTime(task),
       });
     }).join("");
     return `<section class="calendar-month-cell ${inMonth ? "" : "is-outside-month"} ${date === TODAY ? "is-today" : ""}" data-calendar-date="${date}" style="grid-row:${Math.floor(index / 7) + 2}">
@@ -522,7 +545,7 @@ function renderPlanner() {
     ["month", "Mês"],
   ].map(([view, label]) => `<button class="planner-view-button ${plannerView === view ? "is-active" : ""}" data-action="planner-view" data-view="${view}" aria-pressed="${plannerView === view}">${label}</button>`).join("");
   const undatedTasks = `<section class="calendar-undated calendar-undated-drop" data-drop-zone="undated"><div class="calendar-undated-heading"><span>Tarefas sem data</span><small>${tasksWithoutDate.length}</small></div><div class="calendar-undated-list">${tasksWithoutDate.map((task) => plannerTaskCard(task)).join("")}${tasksWithoutDate.length ? "" : `<span class="calendar-lane-empty">Arraste tarefas para cá para remover a data.</span>`}<button class="calendar-add-untimed" data-action="add-planner-task" aria-label="Adicionar tarefa sem data">+</button></div></section>`;
-  const monthUntimedLane = plannerView === "month" ? `<section class="calendar-undated calendar-month-untimed"><div class="calendar-undated-heading"><span>Tarefas sem horário</span><small>Escolha uma data para agendá-las</small></div><div class="calendar-undated-list">${state.tasks.flatMap((task) => dates.filter((date) => taskIncludesDate(task, date) && !task.time).map((date) => plannerTaskCard(task, false, true, false, 0, { date, isStart: date === task.date, isEnd: date === taskEndDate(task) }))).join("") || `<span class="calendar-lane-empty">Nenhuma tarefa sem horário neste mês.</span>`}</div></section>` : "";
+  const monthUntimedLane = plannerView === "month" ? `<section class="calendar-undated calendar-month-untimed"><div class="calendar-undated-heading"><span>Tarefas sem horário</span><small>Escolha uma data para agendá-las</small></div><div class="calendar-undated-list">${dates.flatMap((date) => getTaskForDate(date).filter((task) => !task.time).map((task) => plannerTaskCard(task, true, false, 0, { date, isStart: date === task.date, isEnd: date === taskEndDate(task) }))).join("") || `<span class="calendar-lane-empty">Nenhuma tarefa sem horário neste mês.</span>`}</div></section>` : "";
   return `
     ${pageHeading("UM OLHAR MAIS AMPLO", "Planner", "Enxergue sua semana com calma e sem deixar nada escapar.", emptyAction("Planejar tarefa", "add-task"))}
     <section class="panel planner-panel">
@@ -920,12 +943,25 @@ function renderSettings() {
 
 function taskFields(task = null, defaults = {}) {
   const startDate = task ? task.date || "" : defaults.date ?? TODAY;
-  const endDate = task ? taskEndDate(task) : defaults.endDate || startDate;
+  const recurrence = normalizeRecurrence(task?.recurrence, task?.date);
+  const endDate = task
+    ? recurrence ? task.endDate || "" : taskEndDate(task)
+    : defaults.endDate || startDate;
+  const weekdays = recurrence?.weekdays || [];
+  const weekdayOptions = [[1, "Seg"], [2, "Ter"], [3, "Qua"], [4, "Qui"], [5, "Sex"], [6, "Sáb"], [7, "Dom"]];
   return `
     <div class="task-primary-fields">
       <input id="task-title" name="title" maxlength="120" required autofocus value="${escapeAttr(task?.title || "")}" placeholder="Nome da tarefa" aria-label="Nome da tarefa">
       <textarea id="task-description" name="description" maxlength="500" placeholder="Descrição (opcional)" aria-label="Descrição">${escapeHTML(task?.description || "")}</textarea>
     </div>
+    <section class="task-recurrence">
+      <div class="task-recurrence-heading"><span class="task-detail-icon">${icon("calendar")}</span><span class="task-detail-label">Repetir</span><button class="task-recurrence-switch" type="button" role="switch" aria-checked="${Boolean(recurrence)}" aria-label="Repetir tarefa" data-action="toggle-recurrence"><span></span></button><input type="hidden" name="recurrenceEnabled" value="${recurrence ? "true" : ""}"></div>
+      <div class="task-recurrence-options" ${recurrence ? "" : "hidden"}>
+        <label class="task-recurrence-field"><span>Frequência</span><select name="recurrenceFrequency" ${recurrence ? "" : "disabled"}><option value="daily" ${recurrence?.frequency === "daily" ? "selected" : ""}>Diariamente</option><option value="weekly" ${recurrence?.frequency === "weekly" ? "selected" : ""}>Semanalmente</option><option value="monthly" ${recurrence?.frequency === "monthly" ? "selected" : ""}>Mensalmente</option></select></label>
+        <fieldset class="task-weekday-options" ${recurrence?.frequency === "weekly" ? "" : "hidden"} ${recurrence ? "" : "disabled"}><legend>Repetir nos dias</legend><div>${weekdayOptions.map(([day, label]) => `<button class="task-weekday-button" type="button" data-recurrence-day="${day}" aria-pressed="${weekdays.includes(day)}" ${recurrence?.frequency === "weekly" ? "" : "disabled"}>${label}</button>`).join("")}</div></fieldset>
+        <p class="task-recurrence-hint">A repetição termina na data de fim em Data. Sem data de fim, continua indefinidamente.</p>
+      </div>
+    </section>
     <section class="task-detail-group" aria-label="Data e horário">
       <div class="task-detail-row task-date-row"><span class="task-detail-icon">${icon("calendar")}</span><span class="task-detail-label">Data</span><div class="task-detail-values"><label><span class="visually-hidden">Data de início</span><input id="task-date" name="date" type="date" value="${escapeAttr(startDate)}"></label><span class="task-date-separator">até</span><label><span class="visually-hidden">Data de fim</span><input id="task-end-date" name="endDate" type="date" value="${escapeAttr(endDate)}"></label></div></div>
       <div class="task-detail-row"><span class="task-detail-icon">${icon("calendar")}</span><span class="task-detail-label">Horário</span><div class="task-detail-values task-time-values"><div class="task-time-input"><span class="visually-hidden">Horário de início</span><input id="task-time-hour" class="task-time-part" data-time-part="hour" data-time-field="time" type="text" inputmode="numeric" maxlength="2" placeholder="HH" aria-label="Hora de início"><span aria-hidden="true">:</span><input id="task-time-minute" class="task-time-part" data-time-part="minute" data-time-field="time" type="text" inputmode="numeric" maxlength="2" placeholder="MM" aria-label="Minutos de início"><input id="task-time" name="time" type="hidden" value="${escapeAttr(task ? task.time || "" : defaults.time || "")}"></div><span class="task-time-separator">–</span><div class="task-time-input"><span class="visually-hidden">Horário de fim</span><input id="task-end-time-hour" class="task-time-part" data-time-part="hour" data-time-field="endTime" type="text" inputmode="numeric" maxlength="2" placeholder="HH" aria-label="Hora de fim"><span aria-hidden="true">:</span><input id="task-end-time-minute" class="task-time-part" data-time-part="minute" data-time-field="endTime" type="text" inputmode="numeric" maxlength="2" placeholder="MM" aria-label="Minutos de fim"><input id="task-end-time" name="endTime" type="hidden" value="${escapeAttr(task?.endTime || "")}"></div></div></div>
@@ -943,10 +979,20 @@ function showModal(title, formType, formFields, id = "") {
   const taskForm = modal.querySelector('[data-form="task"]');
   modal.classList.toggle("modal-task", Boolean(taskForm));
   if (taskForm) {
+    const titleInput = taskForm.querySelector('[name="title"]');
+    titleInput.addEventListener("blur", () => {
+      titleInput.value = capitalizeTaskTitle(titleInput.value);
+    });
     const startDateInput = taskForm.querySelector('[name="date"]');
     const endDateInput = taskForm.querySelector('[name="endDate"]');
     const startInput = taskForm.querySelector('[name="time"]');
     const endInput = taskForm.querySelector('[name="endTime"]');
+    const recurrenceEnabled = taskForm.querySelector('[name="recurrenceEnabled"]');
+    const recurrenceOptions = taskForm.querySelector(".task-recurrence-options");
+    const recurrenceSwitch = taskForm.querySelector(".task-recurrence-switch");
+    const recurrenceFrequency = taskForm.querySelector('[name="recurrenceFrequency"]');
+    const weekdayOptions = taskForm.querySelector(".task-weekday-options");
+    const weekdayButtons = [...taskForm.querySelectorAll("[data-recurrence-day]")];
     const timeParts = [...taskForm.querySelectorAll(".task-time-part")];
     const descriptionInput = taskForm.querySelector('[name="description"]');
     const syncTimeField = (fieldName) => {
@@ -978,9 +1024,15 @@ function showModal(title, formType, formFields, id = "") {
     };
     const validateRange = () => {
       if (!startDateInput.value) endDateInput.value = "";
+      endDateInput.min = startDateInput.value;
       endDateInput.setCustomValidity(!endDateInput.value ? "" : !startDateInput.value
         ? "Informe a data de início antes da data de fim."
         : endDateInput.value < startDateInput.value ? "A data de fim precisa ser igual ou posterior à data de início." : "");
+      startDateInput.setCustomValidity(recurrenceEnabled.value === "true" && !startDateInput.value
+        ? "Informe a data de início para configurar a recorrência." : "");
+      recurrenceFrequency.setCustomValidity(recurrenceEnabled.value === "true" && recurrenceFrequency.value === "weekly"
+        && !weekdayButtons.some((button) => button.getAttribute("aria-pressed") === "true")
+        ? "Selecione ao menos um dia da semana." : "");
       const validTime = (input, parts) => {
         const hasValue = Boolean(parts.hour.value || parts.minute.value);
         const complete = input.value && /^(?:[01]\d|2[0-3]):[0-5]\d$/.test(input.value);
@@ -998,10 +1050,33 @@ function showModal(title, formType, formFields, id = "") {
         endParts.minute.setCustomValidity("Informe o horário de início antes do horário de fim.");
       }
     };
+    const updateRecurrenceFields = (enabled) => {
+      recurrenceEnabled.value = enabled ? "true" : "";
+      recurrenceSwitch.setAttribute("aria-checked", String(enabled));
+      recurrenceOptions.hidden = !enabled;
+      recurrenceFrequency.disabled = !enabled;
+      startDateInput.required = enabled;
+      const weekly = enabled && recurrenceFrequency.value === "weekly";
+      weekdayOptions.hidden = !weekly;
+      weekdayOptions.disabled = !weekly;
+      weekdayButtons.forEach((button) => { button.disabled = !weekly; });
+      validateRange();
+    };
+    recurrenceSwitch.addEventListener("click", () => {
+      const enabled = recurrenceEnabled.value !== "true";
+      if (enabled && endDateInput.value === startDateInput.value) endDateInput.value = "";
+      updateRecurrenceFields(enabled);
+    });
+    recurrenceFrequency.addEventListener("change", () => updateRecurrenceFields(recurrenceEnabled.value === "true"));
+    weekdayButtons.forEach((button) => button.addEventListener("click", () => {
+      const selected = button.getAttribute("aria-pressed") !== "true";
+      button.setAttribute("aria-pressed", String(selected));
+      validateRange();
+    }));
     startDateInput.addEventListener("input", validateRange);
     endDateInput.addEventListener("input", validateRange);
     descriptionInput.addEventListener("input", autoSizeDescription);
-    validateRange();
+    updateRecurrenceFields(recurrenceEnabled.value === "true");
     autoSizeDescription();
   }
   modal.showModal();
@@ -1009,7 +1084,7 @@ function showModal(title, formType, formFields, id = "") {
 }
 
 function openTaskModal(id = "", defaults = {}) {
-  const task = state.tasks.find((item) => item.id === id);
+  const task = getTaskById(id);
   showModal(task ? "Editar tarefa" : "Nova tarefa", "task", taskFields(task, defaults));
 }
 
@@ -1037,7 +1112,9 @@ function openModalFor(action, id = "", defaults = {}) {
 function submitForm(form) {
   const data = Object.fromEntries(new FormData(form).entries());
   if (form.dataset.form === "task") {
-    const existing = state.tasks.find((task) => task.id === data.id);
+    data.recurrenceWeekdays = [...form.querySelectorAll('[data-recurrence-day][aria-pressed="true"]')]
+      .map((button) => Number(button.dataset.recurrenceDay));
+    const existing = getTaskById(data.id);
     state.tasks = saveTask(state.tasks, data, existing, makeId);
     if (!persist()) { render(); return; }
     document.querySelector("#modal").close();
@@ -1181,8 +1258,6 @@ document.addEventListener("click", (event) => {
     if (target.dataset.taskView) {
       taskView = target.dataset.taskView;
       render();
-    } else if (target.dataset.filter) {
-      taskFilter = target.dataset.filter; render();
     } else if (target.dataset.date) {
       plannerDate = target.dataset.date; render();
     } else if (target.dataset.mood) {
@@ -1203,8 +1278,8 @@ document.addEventListener("click", (event) => {
   else if (action === "toggle-task") toggleTask(id);
   else if (action === "toggle-habit") toggleHabit(id);
   else if (action === "delete-task") {
-    const task = state.tasks.find((item) => item.id === id);
-    if (task && window.confirm(`Excluir a tarefa “${task.title}”?`)) {
+    const task = getTaskById(id);
+    if (task && window.confirm(`Excluir ${task.recurrence ? `a recorrência da tarefa “${task.title}”` : `a tarefa “${task.title}”`}?`)) {
       state.tasks = deleteTask(state.tasks, id);
       persist();
       const modal = document.querySelector("#modal");

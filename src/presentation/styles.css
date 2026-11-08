@@ -178,7 +178,7 @@ h1, h2, h3 { font-family: "Manrope", sans-serif; }
 .group-heading.overdue .group-dot { background: var(--red); }
 .task-view-toolbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 15px; }
 .task-view-switch { display: flex; flex-wrap: wrap; gap: 6px; }
-.task-week-grid { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 10px; align-items: start; }
+.task-week-grid { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 10px; align-items: stretch; }
 .task-day-column, .task-undated-group, .task-kanban-column, .task-eisenhower-quadrant { min-width: 0; padding: 13px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); }
 .task-day-column { display: grid; align-content: start; gap: 8px; }
 .task-day-column h2, .task-undated-group h2, .task-kanban-column h2, .task-eisenhower-quadrant h2 { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 0 0 10px; color: #64687d; font-size: 11px; font-weight: 700; }
@@ -199,11 +199,13 @@ h1, h2, h3 { font-family: "Manrope", sans-serif; }
 .task-view-title:hover { color: var(--accent); }
 .task-view-card .task-meta { gap: 5px; }
 .task-view-card .tag { padding: 2px 5px; font-size: 8px; }
+.task-recurrence-tag { gap: 3px; white-space: nowrap; }
+.task-recurrence-tag svg { width: 10px; height: 10px; flex: 0 0 10px; }
 .task-undated-group { margin-top: 12px; }
-.task-kanban { display: grid; grid-template-columns: repeat(3, minmax(190px, 1fr)); gap: 12px; align-items: start; }
+.task-kanban { display: grid; grid-template-columns: repeat(3, minmax(190px, 1fr)); gap: 12px; align-items: stretch; }
 .task-kanban-column { min-height: 190px; }
 .task-kanban-column h2 span, .task-eisenhower-quadrant h2 span { min-width: 20px; padding: 3px 6px; border-radius: 8px; color: var(--muted); background: var(--surface-soft); font-size: 9px; text-align: center; }
-.task-eisenhower-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; align-items: start; }
+.task-eisenhower-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; align-items: stretch; }
 .task-eisenhower-quadrant { min-height: 180px; }
 
 .planner-panel { overflow: hidden; padding: 17px; }
@@ -244,6 +246,7 @@ h1, h2, h3 { font-family: "Manrope", sans-serif; }
 .calendar-events { position: relative; z-index: 1; display: grid; gap: 3px; padding: 3px; pointer-events: none; }
 .calendar-event { position: relative; min-width: 0; display: flex; align-items: center; gap: 4px; overflow: hidden; padding: 4px 6px; border: 0; border-radius: 5px; color: #514d7a; background: #efedff; font-size: 10px; text-align: left; cursor: pointer; pointer-events: auto; }
 .calendar-event--timed { z-index: 2; align-self: start; display: flex; align-items: flex-start; flex-direction: column; gap: 3px; margin-right: 3px; margin-left: 3px; padding: 5px 7px; border-left: 3px solid currentColor; font-size: 11px; }
+.calendar-event--timed .calendar-event-title { font-size: 12px; }
 .calendar-event:hover { filter: brightness(.97); box-shadow: 0 2px 6px rgba(37,39,68,.1); }
 .calendar-event[draggable="true"] { cursor: grab; }
 .calendar-event.is-dragging { opacity: .4; cursor: grabbing; }
@@ -266,8 +269,7 @@ h1, h2, h3 { font-family: "Manrope", sans-serif; }
 .calendar-month-cell.is-drop-target, .calendar-undated-drop.is-drop-target { outline: 2px dashed var(--accent); outline-offset: -3px; background-color: var(--accent-soft); }
 .calendar-event.is-complete .calendar-event-title { text-decoration: line-through; opacity: .7; }
 .calendar-event-title { overflow: hidden; font-weight: 700; line-height: 1.25; text-overflow: ellipsis; white-space: nowrap; }
-.calendar-event-time { flex: 0 0 auto; font-size: 9px; font-weight: 700; }
-.calendar-event--timed .calendar-event-time { font-size: 10px; }
+.calendar-event-meta { max-width: 100%; overflow: hidden; color: inherit; font-size: 9px; font-weight: 500; opacity: .75; text-overflow: ellipsis; white-space: nowrap; }
 .area-color-0 { color: #514d7a; background: #efedff; }
 .area-color-1 { color: #315d9b; background: #e6efff; }
 .area-color-2 { color: #a45b40; background: #fff0e8; }
@@ -283,7 +285,9 @@ h1, h2, h3 { font-family: "Manrope", sans-serif; }
 .calendar-month-date { width: 24px; height: 24px; margin-bottom: 4px; border: 0; border-radius: 50%; color: #74778a; background: transparent; font-size: 10px; cursor: pointer; }
 .calendar-month-date:hover, .calendar-month-cell.is-today .calendar-month-date { color: #fff; background: var(--accent); }
 .calendar-month-events { display: grid; align-content: start; gap: 3px; }
-.calendar-month-events .calendar-event { padding: 4px; font-size: 8px; }
+.calendar-month-events .calendar-event { align-items: flex-start; flex-direction: column; gap: 2px; padding: 4px; font-size: 8px; }
+.calendar-month-events .calendar-event-title { max-width: 100%; font-size: 9px; }
+.calendar-month-events .calendar-event-meta { font-size: 7px; }
 .calendar-more-tasks { color: #838699; font-size: 8px; }
 .calendar-help { margin: 10px 0 0; color: #999cad; font-size: 9px; }
 .finance-summary { display: grid; grid-template-columns: repeat(3, 1fr); gap: 13px; margin-bottom: 16px; }
@@ -377,6 +381,26 @@ h1, h2, h3 { font-family: "Manrope", sans-serif; }
 .task-time-input .task-time-part::placeholder { color: var(--muted); opacity: .8; }
 .task-select-row { border-radius: 10px; background: var(--surface-soft); }
 .task-select-row select { width: auto; min-width: 105px; min-height: 32px; padding: 3px 5px; border: 0; color: var(--ink); background: transparent; font-size: 11px; text-align: right; }
+.task-recurrence { overflow: hidden; border-radius: 12px; background: var(--surface-soft); }
+.task-recurrence-heading { display: flex; min-height: 44px; align-items: center; gap: 10px; padding: 5px 11px; }
+.task-recurrence-switch { position: relative; width: 38px; height: 22px; flex: 0 0 38px; padding: 2px; border: 0; border-radius: 12px; background: var(--line); cursor: pointer; transition: background .16s ease; }
+.task-recurrence-switch[aria-checked="true"] { background: var(--accent-strong); }
+.task-recurrence-switch span { display: block; width: 18px; height: 18px; border-radius: 50%; background: var(--surface); box-shadow: 0 1px 3px rgba(0,0,0,.18); transition: transform .16s ease; }
+.task-recurrence-switch[aria-checked="true"] span { transform: translateX(16px); }
+.task-recurrence-switch:focus-visible, .task-weekday-button:focus-visible { outline: 2px solid var(--accent-strong); outline-offset: 2px; }
+.task-recurrence-options { display: grid; gap: 9px; padding: 11px; border-radius: 10px; background: var(--surface-soft); }
+.task-recurrence-options[hidden] { display: none; }
+.task-recurrence-field { display: grid; grid-template-columns: 1fr minmax(140px, 1fr); align-items: center; gap: 10px; color: var(--ink); font-size: 11px; }
+.task-recurrence-field small { color: var(--muted); font-size: 10px; }
+.task-recurrence-field select, .task-recurrence-field input { width: 100%; min-height: 34px; padding: 5px 8px; border: 1px solid var(--line); border-radius: 7px; color: var(--ink); background: var(--surface); font: inherit; }
+.task-weekday-options { min-width: 0; margin: 0; padding: 0; border: 0; }
+.task-weekday-options[hidden] { display: none; }
+.task-weekday-options legend { margin-bottom: 6px; color: var(--ink); font-size: 11px; }
+.task-weekday-options > div { display: flex; flex-wrap: wrap; gap: 5px; }
+.task-weekday-button { min-width: 36px; min-height: 30px; padding: 4px 7px; border: 1px solid var(--line); border-radius: 8px; color: var(--muted); background: var(--surface); font-size: 10px; cursor: pointer; }
+.task-weekday-button[aria-pressed="true"] { border-color: var(--accent-strong); color: var(--accent-strong); background: var(--accent-soft); }
+.task-weekday-button:disabled { cursor: default; }
+.task-recurrence-hint { margin: 0; color: var(--muted); font-size: 10px; }
 .task-form-hint { margin: -4px 2px 0; color: var(--muted); font-size: 10px; }
 .task-modal-actions { position: sticky; bottom: -18px; justify-content: space-between; align-items: center; margin: 3px -20px -18px; padding: 11px 20px; border-top: 1px solid var(--line); background: var(--surface); }
 .task-modal-actions > div { display: flex; gap: 8px; }
