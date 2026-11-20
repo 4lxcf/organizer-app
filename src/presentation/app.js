@@ -1,4 +1,4 @@
-import { addDays, startOfWeek, toISODate } from "../domain/dates.js";
+import { addDays, toISODate } from "../domain/dates.js";
 import {
   AREAS,
   PRIORITIES,
@@ -15,6 +15,7 @@ import {
   parseTaskOccurrenceId,
   taskPriorityOrder,
   taskStatus,
+  suggestTaskEndTime,
 } from "../domain/tasks.js";
 import {
   moveTaskToBoard as moveTaskBetweenBoards,
@@ -28,7 +29,7 @@ const TODAY = toISODate(new Date());
 const SECTION_NAMES = {
   inicio: "Visão geral",
   tarefas: "Tarefas",
-  planner: "Planner",
+  planner: "Calendário",
   habitos: "Hábitos",
   financas: "Finanças",
   metas: "Metas",
@@ -226,6 +227,36 @@ function render() {
     });
   });
   window.scrollTo(pageScroll.x, pageScroll.y);
+  updatePlannerCurrentTimeIndicator();
+}
+
+function updatePlannerCurrentTimeIndicator() {
+  const grid = document.querySelector(".calendar-time-grid");
+  if (!grid || activeSection !== "planner" || plannerView === "month") {
+    document.querySelectorAll(".current-time-indicator").forEach((indicator) => indicator.remove());
+    return;
+  }
+
+  const now = new Date();
+  const date = toISODate(now);
+  const hour = `${String(now.getHours()).padStart(2, "0")}:00`;
+  const quarterHour = Math.floor(now.getMinutes() / 15) * 15;
+  const markerKey = `${date}T${hour.slice(0, 2)}:${String(quarterHour).padStart(2, "0")}`;
+  const existing = grid.querySelector(".current-time-indicator");
+  if (existing?.dataset.markerKey === markerKey) return;
+
+  grid.querySelectorAll(".current-time-indicator").forEach((indicator) => indicator.remove());
+  const cell = [...grid.querySelectorAll(".calendar-hour-cell")]
+    .find((item) => item.dataset.calendarDate === date && item.dataset.calendarTime === hour);
+  if (!cell) return;
+
+  const indicator = document.createElement("span");
+  indicator.className = "current-time-indicator";
+  indicator.dataset.markerKey = markerKey;
+  indicator.dataset.time = `${hour.slice(0, 2)}:${String(quarterHour).padStart(2, "0")}`;
+  indicator.setAttribute("aria-label", `Horário atual aproximado: ${indicator.dataset.time}`);
+  indicator.style.top = `${quarterHour / 60 * 56}px`;
+  cell.append(indicator);
 }
 
 function getTodayTasks() {
@@ -410,12 +441,7 @@ function renderTasks() {
 function getPlannerDates() {
   if (plannerView === "day") return [plannerDate];
   if (plannerView === "week") {
-    const start = startOfWeek(plannerDate);
-    return Array.from({ length: 7 }, (_, index) => {
-      const date = new Date(start);
-      date.setDate(start.getDate() + index);
-      return toISODate(date);
-    });
+    return Array.from({ length: 7 }, (_, index) => addDays(plannerDate, index - 3));
   }
 
   const monthStart = new Date(`${plannerDate.slice(0, 7)}-01T12:00:00`);
@@ -448,15 +474,20 @@ function plannerTaskCard(task, showDate = false, timedGrid = false, dayIndex = 0
   const endMinutes = segment?.endMinutes ?? (task.endTime ? Number(task.endTime.slice(0, 2)) * 60 + Number(task.endTime.slice(3, 5)) : startMinutes + 60);
   const eventDuration = endMinutes - startMinutes;
   const rowSpan = Math.max(1, Math.ceil((minuteOffset + eventDuration) / 60));
+  const eventHeight = Math.max(14, eventDuration / 60 * 56 - 6);
   const eventStyle = timedGrid
-    ? ` style="grid-column:${dayIndex + 2};grid-row:${Math.floor(startMinutes / 60) + 3}/span ${rowSpan};margin-top:${minuteOffset / 60 * 56 + 3}px;height:${Math.max(34, eventDuration / 60 * 56 - 6)}px"`
+    ? ` style="grid-column:${segment?.gridColumn || dayIndex + 2};grid-row:${Math.floor(startMinutes / 60) + 3}/span ${rowSpan};margin-top:${minuteOffset / 60 * 56 + 3}px;height:${eventHeight}px;min-height:${eventHeight}px"`
+    : segment?.monthSpan
+      ? ` style="left:${segment.leftPercent};width:${segment.widthPercent};top:${segment.marginTop}px"`
+    : segment?.gridColumn
+      ? ` style="grid-column:${segment.gridColumn};grid-row:${segment.gridRow};${segment.marginTop ? `margin-top:${segment.marginTop}px;` : ""}"`
     : "";
   const segmentDate = segment?.date || task.date || "";
   const segmentTime = segment?.startTime ?? task.time ?? "";
-  const eventMeta = showDate && segment?.isStart ? formatTaskTime(task) : "";
+  const eventMeta = showDate && (segment?.showTime || segment?.isStart) ? formatTaskTime(task) : "";
   const dateHandles = !recurringOccurrence ? `${segment?.isStart ? `<span class="calendar-resize-handle resize-date-start" data-resize-edge="start-date" aria-hidden="true"></span>` : ""}${segment?.isEnd ? `<span class="calendar-resize-handle resize-date-end" data-resize-edge="end-date" aria-hidden="true"></span>` : ""}` : "";
   const timeHandles = timedGrid && !recurringOccurrence ? `${segment?.isStart ? `<span class="calendar-resize-handle resize-time-start" data-resize-edge="start-time" aria-hidden="true"></span>` : ""}${segment?.isEnd ? `<span class="calendar-resize-handle resize-time-end" data-resize-edge="end-time" aria-hidden="true"></span>` : ""}` : "";
-  return `<button class="calendar-event area-color-${areaIndex} ${task.done ? "is-complete" : ""} ${timedGrid ? "calendar-event--timed" : ""} ${segment?.continuesBefore ? "continues-before" : ""} ${segment?.continuesAfter ? "continues-after" : ""}"${eventStyle} data-action="edit-task" data-id="${escapeAttr(task.id)}" data-calendar-date="${escapeAttr(segmentDate)}" data-calendar-time="${escapeAttr(segmentTime)}" draggable="${!recurringOccurrence}" aria-label="Editar ${escapeAttr(task.title)}${task.recurrence ? `, repetição ${escapeAttr(recurrenceLabel(task.recurrence.frequency))}` : ""}${formatTaskTime(task) ? ` no horário ${escapeAttr(formatTaskTime(task))}` : ""}">
+  return `<button class="calendar-event area-color-${areaIndex} ${task.done ? "is-complete" : ""} ${timedGrid ? "calendar-event--timed" : ""} ${(timedGrid && eventDuration <= 30) || segment?.compact ? "calendar-event--compact" : ""} ${segment?.monthSpan ? "calendar-month-span" : ""} ${segment?.continuesBefore ? "continues-before" : ""} ${segment?.continuesAfter ? "continues-after" : ""}"${eventStyle} data-action="edit-task" data-id="${escapeAttr(task.id)}" data-calendar-date="${escapeAttr(segmentDate)}" data-calendar-time="${escapeAttr(segmentTime)}" draggable="${!recurringOccurrence}" aria-label="Editar ${escapeAttr(task.title)}${task.recurrence ? `, repetição ${escapeAttr(recurrenceLabel(task.recurrence.frequency))}` : ""}${formatTaskTime(task) ? ` no horário ${escapeAttr(formatTaskTime(task))}` : ""}">
     <span class="calendar-event-title">${escapeHTML(task.title)}</span>
     ${showDate && eventMeta ? `<span class="calendar-event-meta">${escapeHTML(eventMeta)}</span>` : ""}
     ${dateHandles}${timeHandles}
@@ -470,33 +501,91 @@ function plannerDayHeader(date) {
 }
 
 function renderUntimedLane(dates) {
-  return `<div class="calendar-lane-row">
-    <div class="calendar-lane-label">Sem horário</div>
-    ${dates.map((date) => {
-      const tasks = getTaskForDate(date).filter((task) => !task.time);
-      return `<div class="calendar-lane-cell" data-calendar-date="${date}">${tasks.map((task) => plannerTaskCard(task, false, false, 0, { date, isStart: date === task.date, isEnd: date === taskEndDate(task) })).join("")}</div>`;
-    }).join("")}
+  const taskMap = new Map(dates.flatMap((date) => getTaskForDate(date))
+    .filter((task) => !task.time)
+    .map((task) => [task.id, task]));
+  const { tasks, laneCount } = layoutCalendarTaskSpans([...taskMap.values()], dates);
+  const rowCount = Math.max(1, laneCount);
+  const cells = dates.map((date, index) => `<div class="calendar-lane-cell" data-calendar-date="${date}" style="grid-column:${index + 2};grid-row:1 / span ${rowCount}"></div>`).join("");
+  const cards = tasks.map(({ task, span, gridRow }) => plannerTaskCard(task, Boolean(task.time), false, span.startIndex, {
+    date: dates[span.startIndex],
+    isStart: span.startsInRange,
+    isEnd: span.endsInRange,
+    showTime: Boolean(task.time),
+    continuesBefore: !span.startsInRange,
+    continuesAfter: !span.endsInRange,
+    gridColumn: `${span.startIndex + 2}/${span.endIndex + 3}`,
+    gridRow,
+    compact: true,
+  })).join("");
+  return `<div class="calendar-lane-row" style="grid-template-rows:repeat(${rowCount},minmax(26px,auto))">
+    <div class="calendar-lane-label" style="grid-column:1;grid-row:1 / span ${rowCount}">Sem horário</div>
+    ${cells}${cards}
   </div>`;
+}
+
+function calendarTaskDateSpan(task, dates) {
+  if (!task.date || !dates.length || task.date > dates[dates.length - 1] || taskEndDate(task) < dates[0]) return null;
+  const firstVisibleDateIndex = dates.findIndex((date) => date >= task.date);
+  const lastVisibleDateIndex = dates.reduce((lastIndex, date, index) => (
+    date <= taskEndDate(task) ? index : lastIndex
+  ), -1);
+  if (firstVisibleDateIndex < 0 || lastVisibleDateIndex < firstVisibleDateIndex) return null;
+  return {
+    startIndex: firstVisibleDateIndex,
+    endIndex: lastVisibleDateIndex,
+    startsInRange: task.date >= dates[0],
+    endsInRange: taskEndDate(task) <= dates[dates.length - 1],
+  };
+}
+
+function layoutCalendarTaskSpans(sourceTasks, dates) {
+  const tasks = sourceTasks.flatMap((task) => {
+    const span = calendarTaskDateSpan(task, dates);
+    return span ? [{ task, span }] : [];
+  }).sort((a, b) => (a.task.time || "").localeCompare(b.task.time || "")
+    || a.span.startIndex - b.span.startIndex
+    || a.span.endIndex - b.span.endIndex);
+  const laneEnds = [];
+  tasks.forEach((item) => {
+    let laneIndex = laneEnds.findIndex((endIndex) => endIndex < item.span.startIndex);
+    if (laneIndex < 0) laneIndex = laneEnds.length;
+    laneEnds[laneIndex] = item.span.endIndex;
+    item.gridRow = laneIndex + 1;
+  });
+  return { tasks, laneCount: laneEnds.length };
 }
 
 function renderDayWeekGrid(dates) {
   const columns = `54px repeat(${dates.length}, minmax(${plannerView === "day" ? "320px" : "105px"}, 1fr))`;
-  const timedTasks = dates.flatMap((date, dayIndex) => getTaskForDate(date)
+  const taskMap = new Map(dates.flatMap((date) => getTaskForDate(date))
     .filter((task) => task.time)
+    .map((task) => [task.id, task]));
+  const timedTasks = [...taskMap.values()]
     .sort((a, b) => a.time.localeCompare(b.time))
-    .map((task) => {
-      const startDate = task.date;
-      const endDate = taskEndDate(task);
-      const isStart = date === startDate;
-      const isEnd = date === endDate;
-      const startMinutes = Number(task.time.slice(0, 2)) * 60 + Number(task.time.slice(3, 5));
-      const endMinutes = task.endTime
+    .flatMap((task) => {
+      const span = calendarTaskDateSpan(task, dates);
+      if (!span) return [];
+      const taskStartMinutes = Number(task.time.slice(0, 2)) * 60 + Number(task.time.slice(3, 5));
+      const taskEndMinutes = task.endTime
         ? Number(task.endTime.slice(0, 2)) * 60 + Number(task.endTime.slice(3, 5))
-        : Math.min(1440, startMinutes + 60);
-      return plannerTaskCard(task, false, true, dayIndex, {
-        date, startMinutes, endMinutes, startTime: task.time, isStart, isEnd,
-      });
-    })).join("");
+        : Math.min(1440, taskStartMinutes + 60);
+      const crossesMidnight = Boolean(task.endTime && task.endTime <= task.time && taskEndDate(task) > task.date);
+      const endMinutes = crossesMidnight
+        ? taskStartMinutes + 60
+        : taskEndMinutes < taskStartMinutes ? taskStartMinutes + 60 : taskEndMinutes;
+      return [plannerTaskCard(task, true, true, span.startIndex, {
+        date: dates[span.startIndex],
+        startMinutes: taskStartMinutes,
+        endMinutes,
+        startTime: task.time,
+        isStart: span.startsInRange,
+        isEnd: span.endsInRange,
+        continuesBefore: !span.startsInRange,
+        continuesAfter: !span.endsInRange,
+        gridColumn: `${span.startIndex + 2}/${span.endIndex + 3}`,
+      })];
+    }).join("");
   const hours = Array.from({ length: 24 }, (_, hour) => {
     const timeLabel = `${String(hour).padStart(2, "0")}:00`;
     const cells = dates.map((date) => {
@@ -504,7 +593,7 @@ function renderDayWeekGrid(dates) {
         <button class="calendar-slot" data-action="add-planner-task" data-date="${date}" data-time="${timeLabel}" aria-label="Adicionar tarefa em ${formatDate(date, { day: "numeric", month: "long" })} às ${timeLabel}"></button>
       </div>`;
     }).join("");
-    return `<div class="calendar-hour-row" style="grid-column:1 / -1;grid-row:${hour + 3};grid-template-columns:${columns}"><div class="calendar-hour-label">${timeLabel}</div>${cells}</div>`;
+    return `<div class="calendar-hour-row" style="grid-column:1 / -1;grid-row:${hour + 3};grid-template-columns:${columns}"><div class="calendar-hour-label ${hour === 0 ? "calendar-hour-label--first" : ""}">${hour === 0 ? "" : timeLabel}</div>${cells}</div>`;
   }).join("");
 
   return `<div class="calendar-scroll"><div class="calendar-time-grid" style="--calendar-columns:${columns};--calendar-min-width:${plannerView === "day" ? "374px" : "790px"}">
@@ -517,44 +606,92 @@ function renderDayWeekGrid(dates) {
 
 function renderMonthGrid(dates) {
   const weekdays = ["Seg", "Ter", "Qua", "Qui", "Sex", "Sáb", "Dom"];
+  const monthCardPitch = 47;
+  const monthCardOffset = 35;
+  const maxVisibleTasks = 4;
   const headers = weekdays.map((weekday) => `<div class="calendar-month-weekday">${weekday}</div>`).join("");
-  const cells = dates.map((date, index) => {
-    const inMonth = date.slice(0, 7) === plannerDate.slice(0, 7);
-    const tasks = getTaskForDate(date).filter((task) => task.time).sort((a, b) => a.time.localeCompare(b.time));
-    const taskCards = tasks.slice(0, 4).map((task) => {
-      const isStart = date === task.date;
-      const isEnd = date === taskEndDate(task);
-      return plannerTaskCard(task, true, false, 0, {
-        date, isStart, isEnd, startTime: task.time,
+  const weekRows = Array.from({ length: dates.length / 7 }, (_, weekIndex) => {
+    const weekDates = dates.slice(weekIndex * 7, weekIndex * 7 + 7);
+    const tasksByDate = weekDates.map((date) => [...new Map(getTaskForDate(date)
+      .map((task) => [task.id, task])).values()]
+      .sort((a, b) => Number(Boolean(a.time)) - Number(Boolean(b.time))
+        || (a.time || "").localeCompare(b.time || "")
+        || a.date.localeCompare(b.date)
+        || a.id.localeCompare(b.id)));
+    const visibleRanksByDate = new Map();
+    const overflowByDate = new Map();
+    tasksByDate.forEach((tasks, index) => {
+      visibleRanksByDate.set(weekDates[index], new Map(tasks.slice(0, maxVisibleTasks)
+        .map((task, rank) => [task.id, rank])));
+      overflowByDate.set(weekDates[index], Math.max(0, tasks.length - maxVisibleTasks));
+    });
+
+    const uniqueTasks = new Map(tasksByDate.flat().map((task) => [task.id, task]));
+    const visibleSegments = [...uniqueTasks.values()].flatMap((task) => {
+      const segments = [];
+      let segmentStart = -1;
+      let segmentRank = -1;
+      const finishSegment = (endIndex) => {
+        if (segmentStart < 0) return;
+        segments.push({ task, startIndex: segmentStart, endIndex, rank: segmentRank });
+        segmentStart = -1;
+      };
+      weekDates.forEach((date, index) => {
+        const rank = visibleRanksByDate.get(date).get(task.id);
+        if (rank === undefined || (segmentStart >= 0 && rank !== segmentRank)) {
+          finishSegment(index - 1);
+        }
+        if (rank !== undefined && segmentStart < 0) {
+          segmentStart = index;
+          segmentRank = rank;
+        }
       });
+      finishSegment(weekDates.length - 1);
+      return segments;
+    }).sort((a, b) => a.rank - b.rank || a.startIndex - b.startIndex || a.endIndex - b.endIndex);
+
+    const cells = weekDates.map((date) => {
+      const inMonth = date.slice(0, 7) === plannerDate.slice(0, 7);
+      return `<section class="calendar-month-cell ${inMonth ? "" : "is-outside-month"} ${date === TODAY ? "is-today" : ""}" data-calendar-date="${date}">
+        <button class="calendar-month-date" data-action="planner-select-day" data-date="${date}" aria-label="Ver ${formatDate(date, { weekday: "long", day: "numeric", month: "long" })}">${Number(date.slice(-2))}</button>
+        ${overflowByDate.get(date) ? `<button class="calendar-more-tasks" data-action="planner-select-day" data-date="${date}" aria-label="Ver ${overflowByDate.get(date)} tarefas adicionais em ${formatDate(date, { day: "numeric", month: "long" })}">+${overflowByDate.get(date)} tarefas</button>` : ""}
+      </section>`;
     }).join("");
-    return `<section class="calendar-month-cell ${inMonth ? "" : "is-outside-month"} ${date === TODAY ? "is-today" : ""}" data-calendar-date="${date}" style="grid-row:${Math.floor(index / 7) + 2}">
-      <button class="calendar-month-date" data-action="planner-select-day" data-date="${date}" aria-label="Ver ${formatDate(date, { weekday: "long", day: "numeric", month: "long" })}">${Number(date.slice(-2))}</button>
-      <div class="calendar-month-events">${taskCards}${tasks.length > 4 ? `<span class="calendar-more-tasks">+${tasks.length - 4} tarefas</span>` : ""}</div>
-    </section>`;
+    const cards = visibleSegments.map(({ task, startIndex, endIndex, rank }) => plannerTaskCard(task, Boolean(task.time), false, startIndex, {
+      date: weekDates[startIndex],
+      isStart: task.date === weekDates[startIndex],
+      isEnd: taskEndDate(task) === weekDates[endIndex],
+      showTime: Boolean(task.time),
+      continuesBefore: task.date < weekDates[startIndex],
+      continuesAfter: taskEndDate(task) > weekDates[endIndex],
+      leftPercent: `calc(${startIndex * 100 / 7}% + 4px)`,
+      widthPercent: `calc(${(endIndex - startIndex + 1) * 100 / 7}% - 8px)`,
+      marginTop: monthCardOffset + rank * monthCardPitch,
+      monthSpan: true,
+    })).join("");
+    const hasOverflow = [...overflowByDate.values()].some((count) => count > 0);
+    const maxVisibleCount = Math.max(0, ...[...visibleRanksByDate.values()].map((ranks) => ranks.size));
+    const minHeight = Math.max(110, monthCardOffset + maxVisibleCount * monthCardPitch + (hasOverflow ? 20 : 5));
+    return `<div class="calendar-month-week" style="min-height:${minHeight}px">${cells}${cards}</div>`;
   }).join("");
-  return `<div class="calendar-month-wrap"><div class="calendar-month-grid" style="grid-template-rows:30px repeat(${dates.length / 7}, minmax(110px, 1fr))">${headers}${cells}</div></div>`;
+  return `<div class="calendar-month-wrap"><div class="calendar-month-grid" style="grid-template-rows:30px repeat(${dates.length / 7}, minmax(110px, auto))">${headers}${weekRows}</div></div>`;
 }
 
 function renderPlanner() {
   const dates = getPlannerDates();
-  const tasksWithoutDate = state.tasks.filter((task) => !task.date);
   const viewButtons = [
     ["day", "Dia"],
     ["week", "Semana"],
     ["month", "Mês"],
   ].map(([view, label]) => `<button class="planner-view-button ${plannerView === view ? "is-active" : ""}" data-action="planner-view" data-view="${view}" aria-pressed="${plannerView === view}">${label}</button>`).join("");
-  const undatedTasks = `<section class="calendar-undated calendar-undated-drop" data-drop-zone="undated"><div class="calendar-undated-heading"><span>Tarefas sem data</span><small>${tasksWithoutDate.length}</small></div><div class="calendar-undated-list">${tasksWithoutDate.map((task) => plannerTaskCard(task)).join("")}${tasksWithoutDate.length ? "" : `<span class="calendar-lane-empty">Arraste tarefas para cá para remover a data.</span>`}<button class="calendar-add-untimed" data-action="add-planner-task" aria-label="Adicionar tarefa sem data">+</button></div></section>`;
-  const monthUntimedLane = plannerView === "month" ? `<section class="calendar-undated calendar-month-untimed"><div class="calendar-undated-heading"><span>Tarefas sem horário</span><small>Escolha uma data para agendá-las</small></div><div class="calendar-undated-list">${dates.flatMap((date) => getTaskForDate(date).filter((task) => !task.time).map((task) => plannerTaskCard(task, true, false, 0, { date, isStart: date === task.date, isEnd: date === taskEndDate(task) }))).join("") || `<span class="calendar-lane-empty">Nenhuma tarefa sem horário neste mês.</span>`}</div></section>` : "";
   return `
-    ${pageHeading("UM OLHAR MAIS AMPLO", "Planner", "Enxergue sua semana com calma e sem deixar nada escapar.", emptyAction("Planejar tarefa", "add-task"))}
+    ${pageHeading("UM OLHAR MAIS AMPLO", "Calendário", "Enxergue sua semana com calma e sem deixar nada escapar.", emptyAction("Adicionar tarefa", "add-task"))}
     <section class="panel planner-panel">
       <div class="panel-heading planner-toolbar">
-        <div><h2>Calendário</h2><p class="panel-subtitle">${plannerRangeLabel(dates)}</p></div>
+        <div><p class="panel-subtitle">${plannerRangeLabel(dates)}</p></div>
         <div class="planner-controls"><div class="planner-view-switch" role="group" aria-label="Visualização do calendário">${viewButtons}</div><div class="planner-actions"><button class="icon-button" data-action="planner-shift" data-step="-1" aria-label="Período anterior">‹</button><button class="button button-secondary" data-action="planner-today">Hoje</button><button class="icon-button" data-action="planner-shift" data-step="1" aria-label="Próximo período">›</button></div></div>
       </div>
-      ${undatedTasks}
-      ${plannerView === "month" ? monthUntimedLane + renderMonthGrid(dates) : renderDayWeekGrid(dates)}
+      ${plannerView === "month" ? renderMonthGrid(dates) : renderDayWeekGrid(dates)}
       <p class="calendar-help">Arraste tarefas para mudar o início. Use as alças nas bordas para ajustar as datas e, na visualização de dia/semana, os horários.</p>
     </section>`;
 }
@@ -643,6 +780,12 @@ function plannerDateAtPoint(x, y) {
       return x >= rect.left && x <= rect.right;
     });
     if (heading) return heading.dataset.date;
+  } else {
+    const cell = [...document.querySelectorAll(".planner-panel .calendar-month-cell")].find((item) => {
+      const rect = item.getBoundingClientRect();
+      return x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom;
+    });
+    if (cell) return cell.dataset.calendarDate;
   }
   const hit = document.elementFromPoint(x, y)?.closest(".calendar-hour-cell, .calendar-lane-cell, .calendar-month-cell, .calendar-event");
   return hit?.closest(".planner-panel") ? hit.dataset.calendarDate || "" : "";
@@ -970,7 +1113,8 @@ function taskFields(task = null, defaults = {}) {
     <div class="task-detail-row task-select-row"><span class="task-detail-icon">${icon("flag")}</span><label class="task-detail-label" for="task-priority">Prioridade</label><select id="task-priority" name="priority">${PRIORITIES.map((item) => `<option ${normalizeTaskPriority(task?.priority) === item ? "selected" : ""}>${item}</option>`).join("")}</select></div>
     <p class="task-form-hint">Sem horário, a tarefa fica como atividade do dia todo.</p>
     <div class="modal-actions task-modal-actions">${task ? `<button type="button" class="task-delete-button" data-action="delete-task" data-id="${escapeAttr(task.id)}" aria-label="Excluir tarefa">${icon("trash")}</button>` : `<span></span>`}<div><button type="button" class="button button-secondary" data-action="close-modal">Cancelar</button><button class="button button-primary" type="submit">Salvar</button></div></div>
-    <input type="hidden" name="id" value="${escapeAttr(task?.id || "")}">`;
+    <input type="hidden" name="id" value="${escapeAttr(task?.id || "")}">
+    <input type="hidden" name="endTimeAutoSuggested" value="${task?.endTimeAutoSuggested ? "true" : ""}">`;
 }
 
 function showModal(title, formType, formFields, id = "") {
@@ -995,6 +1139,7 @@ function showModal(title, formType, formFields, id = "") {
     const weekdayButtons = [...taskForm.querySelectorAll("[data-recurrence-day]")];
     const timeParts = [...taskForm.querySelectorAll(".task-time-part")];
     const descriptionInput = taskForm.querySelector('[name="description"]');
+    const endTimeAutoSuggestedInput = taskForm.querySelector('[name="endTimeAutoSuggested"]');
     const syncTimeField = (fieldName) => {
       const parts = timeParts.filter((part) => part.dataset.timeField === fieldName);
       const hour = parts.find((part) => part.dataset.timePart === "hour");
@@ -1036,9 +1181,11 @@ function showModal(title, formType, formFields, id = "") {
       const validTime = (input, parts) => {
         const hasValue = Boolean(parts.hour.value || parts.minute.value);
         const complete = input.value && /^(?:[01]\d|2[0-3]):[0-5]\d$/.test(input.value);
+        const endsBeforeStart = input.value <= startInput.value && recurrenceEnabled.value !== "true"
+          && (!startDateInput.value || !endDateInput.value || endDateInput.value <= startDateInput.value);
         const message = hasValue && !complete ? "Informe uma hora entre 00 e 23 e minutos entre 00 e 59."
           : input === endInput && complete && !startInput.value ? "Informe o horário de início antes do horário de fim."
-            : input === endInput && complete && input.value <= startInput.value ? "O horário de fim precisa ser depois do horário de início." : "";
+            : input === endInput && complete && endsBeforeStart ? "O horário de fim precisa ser depois do horário de início." : "";
         parts.hour.setCustomValidity(message);
         parts.minute.setCustomValidity(message);
         return !message;
@@ -1050,6 +1197,74 @@ function showModal(title, formType, formFields, id = "") {
         endParts.minute.setCustomValidity("Informe o horário de início antes do horário de fim.");
       }
     };
+    let suggestedEndTime = endTimeAutoSuggestedInput.value === "true" ? endInput.value : "";
+    let suggestedEndDate = "";
+    let endDateWasSuggested = false;
+    const updateSuggestedEndTime = () => {
+      if (!startInput.value) {
+        if (suggestedEndTime && endInput.value === suggestedEndTime) {
+          endInput.value = "";
+          endParts.hour.value = "";
+          endParts.minute.value = "";
+          if (endDateWasSuggested && endDateInput.value === suggestedEndDate) {
+            endDateInput.value = startDateInput.value;
+          }
+          suggestedEndTime = "";
+          endTimeAutoSuggestedInput.value = "";
+          suggestedEndDate = "";
+          endDateWasSuggested = false;
+        }
+        validateRange();
+        return;
+      }
+      if (!/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(startInput.value)
+        || (endInput.value && endInput.value !== suggestedEndTime)) return;
+
+      const nextEndTime = suggestTaskEndTime(startInput.value);
+      const wrapsToNextDay = nextEndTime <= startInput.value;
+      const canUpdateEndDate = recurrenceEnabled.value !== "true" && (endDateInput.value === startDateInput.value
+        || (endDateWasSuggested && endDateInput.value === suggestedEndDate)
+        || (!endDateInput.value && endTimeAutoSuggestedInput.value === "true"));
+
+      endInput.value = nextEndTime;
+      endParts.hour.value = nextEndTime.slice(0, 2);
+      endParts.minute.value = nextEndTime.slice(3, 5);
+      suggestedEndTime = nextEndTime;
+      endTimeAutoSuggestedInput.value = "true";
+      if (startDateInput.value && canUpdateEndDate) {
+        endDateInput.value = wrapsToNextDay ? addDays(startDateInput.value, 1) : startDateInput.value;
+        endDateWasSuggested = wrapsToNextDay;
+        suggestedEndDate = endDateInput.value;
+      }
+      validateRange();
+    };
+    startParts.hour.addEventListener("input", updateSuggestedEndTime);
+    startParts.minute.addEventListener("input", updateSuggestedEndTime);
+    startParts.hour.addEventListener("blur", updateSuggestedEndTime);
+    startParts.minute.addEventListener("blur", updateSuggestedEndTime);
+    const preserveManualEndTime = () => {
+      if (endInput.value !== suggestedEndTime) {
+        if (endDateWasSuggested && endDateInput.value === suggestedEndDate) {
+          endDateInput.value = startDateInput.value;
+        }
+        suggestedEndTime = "";
+        endTimeAutoSuggestedInput.value = "";
+        suggestedEndDate = "";
+        endDateWasSuggested = false;
+        validateRange();
+      }
+    };
+    endParts.hour.addEventListener("input", preserveManualEndTime);
+    endParts.minute.addEventListener("input", preserveManualEndTime);
+    endParts.hour.addEventListener("blur", preserveManualEndTime);
+    endParts.minute.addEventListener("blur", preserveManualEndTime);
+    startDateInput.addEventListener("input", () => {
+      if (suggestedEndTime && endInput.value === suggestedEndTime) updateSuggestedEndTime();
+    });
+    endDateInput.addEventListener("input", () => {
+      endDateWasSuggested = false;
+      suggestedEndDate = "";
+    });
     const updateRecurrenceFields = (enabled) => {
       recurrenceEnabled.value = enabled ? "true" : "";
       recurrenceSwitch.setAttribute("aria-checked", String(enabled));
@@ -1064,8 +1279,17 @@ function showModal(title, formType, formFields, id = "") {
     };
     recurrenceSwitch.addEventListener("click", () => {
       const enabled = recurrenceEnabled.value !== "true";
+      if (enabled && endDateWasSuggested && endDateInput.value === suggestedEndDate) {
+        endDateInput.value = "";
+        endDateWasSuggested = false;
+        suggestedEndDate = "";
+      } else if (!enabled && suggestedEndTime && endInput.value === suggestedEndTime
+        && startDateInput.value && !endDateInput.value) {
+        endDateInput.value = startDateInput.value;
+      }
       if (enabled && endDateInput.value === startDateInput.value) endDateInput.value = "";
       updateRecurrenceFields(enabled);
+      updateSuggestedEndTime();
     });
     recurrenceFrequency.addEventListener("change", () => updateRecurrenceFields(recurrenceEnabled.value === "true"));
     weekdayButtons.forEach((button) => button.addEventListener("click", () => {
@@ -1077,6 +1301,7 @@ function showModal(title, formType, formFields, id = "") {
     endDateInput.addEventListener("input", validateRange);
     descriptionInput.addEventListener("input", autoSizeDescription);
     updateRecurrenceFields(recurrenceEnabled.value === "true");
+    updateSuggestedEndTime();
     autoSizeDescription();
   }
   modal.showModal();
@@ -1205,7 +1430,7 @@ function normalizeImportedData(parsed) {
         throw new Error("Há um horário de início inválido em uma tarefa da cópia.");
       }
       if (endTime && (!task.time || !/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(endTime)
-        || endTime <= task.time)) {
+        || (endTime <= task.time && task.date && endDate <= task.date && !task.recurrence))) {
         throw new Error("Há um horário de fim inválido em uma tarefa da cópia.");
       }
       return normalizeTask({ ...task, date: task.date || "", endDate, time: task.time || "", endTime });
@@ -1393,4 +1618,5 @@ export function startApp(repository) {
   loadState();
   hydrateIcons();
   render();
+  window.setInterval(updatePlannerCurrentTimeIndicator, 15000);
 }

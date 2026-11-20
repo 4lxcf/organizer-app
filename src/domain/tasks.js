@@ -80,13 +80,16 @@ function recurrenceIndexAtOrAfter(startDate, frequency, targetDate) {
 
 function createTaskOccurrence(task, occurrenceDate) {
   const done = Boolean(task.completedOccurrences?.includes(occurrenceDate));
+  const endDate = task.time && task.endTime && task.endTime <= task.time
+    ? addDays(occurrenceDate, 1)
+    : occurrenceDate;
   return {
     ...task,
     id: taskOccurrenceId(task.id, occurrenceDate),
     seriesId: task.id,
     occurrenceDate,
     date: occurrenceDate,
-    endDate: occurrenceDate,
+    endDate,
     done,
     status: done ? "done" : task.status === "done" || task.done ? "todo" : taskStatus(task),
   };
@@ -160,24 +163,45 @@ export function formatTaskTime(task) {
   return task.endTime ? `${task.time}–${task.endTime}` : task.time;
 }
 
+export function suggestTaskEndTime(startTime) {
+  if (!/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(startTime)) return "";
+  const endMinutes = (Number(startTime.slice(0, 2)) * 60 + Number(startTime.slice(3, 5)) + 60) % (24 * 60);
+  return `${String(Math.floor(endMinutes / 60)).padStart(2, "0")}:${String(endMinutes % 60).padStart(2, "0")}`;
+}
+
 export function normalizeTask(task) {
   const { duration, ...savedTask } = task;
   const status = normalizeTaskStatus(savedTask.status, savedTask.done);
   const recurrence = normalizeRecurrence(savedTask.recurrence, savedTask.date);
+  const time = typeof savedTask.time === "string" ? savedTask.time : "";
+  const hasValidStartTime = /^(?:[01]\d|2[0-3]):[0-5]\d$/.test(time);
+  const hasSavedEndTime = typeof savedTask.endTime === "string" && savedTask.endTime;
+  const endTime = hasSavedEndTime
+    ? savedTask.endTime
+    : hasValidStartTime
+      ? suggestTaskEndTime(time)
+      : "";
+  const endTimeAutoSuggested = savedTask.endTimeAutoSuggested === true || (!hasSavedEndTime && hasValidStartTime);
+  const suggestedEndCrossesMidnight = !hasSavedEndTime && hasValidStartTime && endTime <= time;
   const legacyRecurrenceEndDate = typeof savedTask.recurrence?.endDate === "string"
     ? savedTask.recurrence.endDate
     : null;
-  const endDate = recurrence
+  let endDate = recurrence
     ? legacyRecurrenceEndDate ?? (typeof savedTask.endDate === "string" ? savedTask.endDate : "")
     : typeof savedTask.endDate === "string" && savedTask.endDate ? savedTask.endDate : savedTask.date || "";
+  if (suggestedEndCrossesMidnight && !recurrence && savedTask.date && endDate === savedTask.date) {
+    endDate = addDays(savedTask.date, 1);
+  }
   return {
     ...savedTask,
+    endTimeAutoSuggested,
+    time,
     endDate,
     recurrence,
     completedOccurrences: Array.isArray(savedTask.completedOccurrences)
       ? [...new Set(savedTask.completedOccurrences.filter((date) => typeof date === "string"))]
       : [],
-    endTime: typeof savedTask.endTime === "string" ? savedTask.endTime : "",
+    endTime,
     area: normalizeTaskArea(savedTask.area),
     priority: normalizeTaskPriority(savedTask.priority),
     status,

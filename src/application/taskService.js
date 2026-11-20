@@ -6,6 +6,7 @@ import {
   normalizeTaskStatus,
   capitalizeTaskTitle,
   parseTaskOccurrenceId,
+  suggestTaskEndTime,
   taskEndDate,
 } from "../domain/tasks.js";
 
@@ -17,7 +18,8 @@ export function saveTask(tasks, data, existing, createId) {
     date: data.date || "",
     endDate: data.date ? data.recurrenceEnabled ? data.endDate || "" : data.endDate || data.date : "",
     time: data.time || "",
-    endTime: data.endTime || "",
+    endTime: data.endTime || suggestTaskEndTime(data.time || ""),
+    endTimeAutoSuggested: data.endTimeAutoSuggested === "true",
     area: normalizeTaskArea(data.area),
     priority: normalizeTaskPriority(data.priority),
     done: existing?.done ?? false,
