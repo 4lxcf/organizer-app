@@ -356,33 +356,40 @@ function taskViewButtons() {
 }
 
 function taskViewCard(task, showDate = true, draggable = false) {
+  const done = taskStatus(task) === "done";
   return `<article class="task-view-card ${taskStatus(task) === "done" ? "is-complete" : ""}" ${draggable && !task.occurrenceDate ? `draggable="true" data-task-card-id="${escapeAttr(task.id)}"` : ""}>
-    <button class="task-view-title" data-action="edit-task" data-id="${escapeAttr(task.id)}">${escapeHTML(task.title)}</button>
+    <div class="task-view-card-main">
+      <button class="task-complete-button ${done ? "is-done" : ""}" data-action="toggle-task" data-id="${escapeAttr(task.id)}" aria-label="${done ? "Reabrir" : "Concluir"} ${escapeAttr(task.title)}">${done ? icon("check") : ""}</button>
+      <button class="task-view-title ${done ? "is-complete" : ""}" data-action="edit-task" data-id="${escapeAttr(task.id)}">${escapeHTML(task.title)}</button>
+    </div>
     <div class="task-meta">${showDate ? task.date ? `<span>${escapeHTML(formatDate(task.date, { day: "2-digit", month: "short" }))}</span>` : `<span>Sem data</span>` : ""}${task.time ? `<span>${escapeHTML(formatTaskTime(task))}</span>` : ""}${task.recurrence ? `<span class="tag task-recurrence-tag">${icon("refresh")}${recurrenceLabel(task.recurrence.frequency)}</span>` : ""}</div>
   </article>`;
 }
 
+function sortTaskCards(tasks) {
+  return [...tasks].sort((a, b) => Number(taskStatus(a) === "done") - Number(taskStatus(b) === "done")
+    || compareTasksBySchedule(a, b));
+}
+
 function renderWeeklyTasks(tasks) {
-  const overdueTasks = tasks.filter((task) => task.date && taskEndDate(task) < TODAY && !task.done)
-    .sort(compareTasksBySchedule);
+  const overdueTasks = sortTaskCards(tasks.filter((task) => task.date && taskEndDate(task) < TODAY && !task.done));
   const latestOverdueBySeries = new Map();
   overdueTasks.forEach((task) => {
     if (task.seriesId) latestOverdueBySeries.set(task.seriesId, task);
   });
   const visibleOverdueTasks = overdueTasks.filter((task) => !task.seriesId || latestOverdueBySeries.get(task.seriesId) === task);
-  const overdueColumn = `<section class="task-day-column task-overdue-column"><h2>Em atraso<span>${visibleOverdueTasks.length}</span></h2>${visibleOverdueTasks.length ? visibleOverdueTasks.map((task) => taskViewCard(task, true, true)).join("") : `<p class="task-view-empty">Sem tarefas</p>`}</section>`;
+  const overdueColumn = `<div class="task-day-group"><h2 class="task-overdue-heading">Em atraso<span>${visibleOverdueTasks.length}</span></h2><section class="task-day-column task-overdue-column">${visibleOverdueTasks.length ? visibleOverdueTasks.map((task) => taskViewCard(task, true, true)).join("") : `<p class="task-view-empty">Sem tarefas</p>`}</section></div>`;
   const dates = Array.from({ length: 4 }, (_, index) => addDays(TODAY, index));
   const days = dates.map((date, index) => {
-    const dayTasks = tasks.filter((task) => taskIncludesDate(task, date)).sort((a, b) => (
-      (a.time || "99:99").localeCompare(b.time || "99:99") || (a.date || "").localeCompare(b.date || "")
-    ));
+    const dayTasks = sortTaskCards(tasks.filter((task) => taskIncludesDate(task, date)));
     const heading = formatDate(date, { weekday: "long", day: "numeric", month: "short" });
-    const todayTasks = getTodayTasks();
-    const completedToday = todayTasks.filter((task) => task.done).length;
-    const progress = index === 0 ? `<span class="task-day-progress" aria-label="${completedToday} de ${todayTasks.length} tarefas concluídas">${completedToday}/${todayTasks.length}</span>` : "";
-    return `<section class="task-day-column" data-week-date="${date}"><h2><span class="task-day-heading">${escapeHTML(heading)}${index === 0 ? `<small>Hoje</small>` : ""}</span>${progress}</h2>${dayTasks.length ? dayTasks.map((task) => taskViewCard(task, true, true)).join("") : `<p class="task-view-empty">Sem tarefas</p>`}</section>`;
+    const pendingCount = dayTasks.filter((task) => !task.done).length;
+    const progress = `<span class="task-day-progress" aria-label="${pendingCount} tarefas para fazer em ${escapeAttr(heading)}">${pendingCount}</span>`;
+    const todayClass = index === 0 ? " is-today" : "";
+    const todayMarker = index === 0 ? `<span class="task-today-marker" aria-label="Dia de hoje">Hoje</span>` : "";
+    return `<div class="task-day-group${todayClass}"><h2><span class="task-day-heading">${escapeHTML(heading)}</span>${progress}</h2><section class="task-day-column${todayClass}" data-week-date="${date}">${todayMarker}${dayTasks.length ? dayTasks.map((task) => taskViewCard(task, true, true)).join("") : `<p class="task-view-empty">Sem tarefas</p>`}</section></div>`;
   }).join("");
-  const undatedTasks = tasks.filter((task) => !task.date).sort(compareTasksBySchedule);
+  const undatedTasks = sortTaskCards(tasks.filter((task) => !task.date));
   return `<div class="task-week-grid">${overdueColumn}${days}</div>${undatedTasks.length ? `<section class="task-undated-group"><h2>Sem data</h2><div class="task-view-card-list">${undatedTasks.map((task) => taskViewCard(task, true, true)).join("")}</div></section>` : ""}`;
 }
 
@@ -393,15 +400,14 @@ function renderKanbanTasks(tasks) {
     ["done", "Feito"],
   ];
   return `<div class="task-kanban">${columns.map(([status, label]) => {
-    const columnTasks = tasks.filter((task) => taskStatus(task) === status)
-      .sort((a, b) => compareTasksBySchedule(a, b) || taskPriorityOrder(a) - taskPriorityOrder(b));
+    const columnTasks = sortTaskCards(tasks.filter((task) => taskStatus(task) === status));
     return `<section class="task-kanban-column" data-task-status="${status}"><h2>${label}<span>${columnTasks.length}</span></h2>${columnTasks.length ? columnTasks.map((task) => taskViewCard(task, true, true)).join("") : `<p class="task-view-empty">Nenhuma tarefa</p>`}</section>`;
   }).join("")}</div>`;
 }
 
 function renderEisenhowerTasks(tasks) {
   return `<div class="task-eisenhower-grid">${PRIORITIES.map((priority) => {
-    const quadrantTasks = tasks.filter((task) => normalizeTaskPriority(task.priority) === priority).sort(compareTasksBySchedule);
+    const quadrantTasks = sortTaskCards(tasks.filter((task) => normalizeTaskPriority(task.priority) === priority));
     return `<section class="task-eisenhower-quadrant" data-task-priority="${escapeAttr(priority)}"><h2>${escapeHTML(priority)}<span>${quadrantTasks.length}</span></h2>${quadrantTasks.length ? quadrantTasks.map((task) => taskViewCard(task, true, true)).join("") : `<p class="task-view-empty">Nenhuma tarefa</p>`}</section>`;
   }).join("")}</div>`;
 }
@@ -433,8 +439,7 @@ function renderTasks() {
     : allTasks;
   return `
     ${pageHeading("TUDO COMEÇA POR AQUI", "Tarefas", "Tire as ideias da cabeça e organize o próximo passo.", emptyAction("Nova tarefa", "add-task"))}
-    <div class="task-view-toolbar">${taskViewButtons()}</div>
-    <div class="toolbar"><label class="search-box">${icon("search")}<input type="search" id="task-search" placeholder="Buscar uma tarefa" value="${escapeAttr(taskSearch)}" aria-label="Buscar uma tarefa"></label></div>
+    <div class="task-view-toolbar">${taskViewButtons()}<label class="search-box">${icon("search")}<input type="search" id="task-search" placeholder="Buscar uma tarefa" value="${escapeAttr(taskSearch)}" aria-label="Buscar uma tarefa"></label></div>
     <div class="task-page-list">${renderWeeklyTasks(tasks)}</div>`;
 }
 

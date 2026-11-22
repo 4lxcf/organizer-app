@@ -162,7 +162,6 @@ h1, h2, h3 { font-family: "Manrope", sans-serif; }
 .empty-state h3 { margin: 0 0 7px; font-size: 14px; }
 .empty-state p { max-width: 350px; margin: 0 auto 16px; color: var(--muted); font-size: 11px; line-height: 1.6; }
 
-.toolbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 17px; }
 .filter-row { display: flex; flex-wrap: wrap; gap: 6px; }
 .filter-chip { min-height: 31px; padding: 0 11px; border: 1px solid var(--line); border-radius: 8px; color: #85889b; background: var(--surface); font-size: 10px; cursor: pointer; }
 .filter-chip:hover, .filter-chip.is-active { border-color: #dad7fb; color: var(--accent); background: var(--accent-soft); }
@@ -179,23 +178,38 @@ h1, h2, h3 { font-family: "Manrope", sans-serif; }
 .task-view-toolbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 15px; }
 .task-view-switch { display: flex; flex-wrap: wrap; gap: 6px; }
 .task-week-grid { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 10px; align-items: stretch; }
+.task-day-group { min-width: 0; display: grid; grid-template-rows: auto 1fr; }
+.task-day-group > h2 { min-height: 24px; display: flex; align-items: center; justify-content: flex-start; gap: 6px; margin: 0 0 8px; color: #64687d; font-size: 10px; font-weight: 700; white-space: nowrap; }
+.task-day-group > h2 > span:not(.task-day-heading) { padding: 3px 6px; border-radius: 6px; color: var(--accent); background: var(--accent-soft); font-size: 9px; }
+.task-day-group > h2.task-overdue-heading { color: var(--red); }
+.task-day-group > h2.task-overdue-heading > span { color: var(--red); background: var(--red-soft); }
 .task-day-column, .task-undated-group, .task-kanban-column, .task-eisenhower-quadrant { min-width: 0; padding: 13px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); }
-.task-day-column { display: grid; align-content: start; gap: 8px; }
-.task-day-column h2, .task-undated-group h2, .task-kanban-column h2, .task-eisenhower-quadrant h2 { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 0 0 10px; color: #64687d; font-size: 11px; font-weight: 700; }
+.task-day-column { position: relative; height: 100%; display: grid; align-content: start; gap: 8px; }
+.task-today-marker { position: absolute; z-index: 2; top: -9px; left: 12px; height: 18px; display: flex; align-items: center; padding: 0 7px; border: 1px solid var(--accent-strong); border-radius: 6px; color: var(--accent-strong); background: var(--accent-soft); box-shadow: 0 3px 8px rgba(109,100,217,.09); font-size: 8px; font-weight: 800; line-height: 1; }
+.task-day-column h2, .task-undated-group h2, .task-kanban-column h2, .task-eisenhower-quadrant h2 { display: flex; align-items: center; justify-content: space-between; gap: 4px; margin: 0 0 10px; color: #64687d; font-size: 10px; font-weight: 700; white-space: nowrap; }
 .task-day-column h2 > span:not(.task-day-heading) { padding: 3px 6px; border-radius: 6px; color: var(--accent); background: var(--accent-soft); font-size: 9px; }
-.task-day-heading { display: grid; min-width: 0; gap: 2px; }
+.task-day-heading { display: flex; min-width: 0; align-items: center; gap: 6px; white-space: nowrap; }
 .task-day-heading small { color: var(--accent); font-size: 9px; font-weight: 500; }
 .task-day-progress { flex: 0 0 auto; color: var(--muted); font-variant-numeric: tabular-nums; }
+.task-overdue-column { border-color: #f1d8da; background: var(--red-soft); }
 .task-overdue-column h2 { color: var(--red); }
+body.dark .task-overdue-column { border-color: #57353f; background: var(--red-soft); }
 .task-view-empty { margin: 0; padding: 7px 0; color: #a0a3b2; font-size: 10px; }
 .task-view-card-list, .task-kanban-column, .task-eisenhower-quadrant { display: grid; align-content: start; gap: 8px; }
 .task-view-card { min-width: 0; padding: 10px; border: 1px solid var(--line); border-radius: 9px; background: var(--surface-soft); }
+.task-view-card-main { display: flex; align-items: flex-start; gap: 8px; }
+.task-complete-button { width: 14px; height: 14px; flex: 0 0 14px; display: grid; place-items: center; margin-top: 1px; padding: 0; border: 1.5px solid #a7aabd; border-radius: 4px; color: transparent; background: transparent; cursor: pointer; }
+.task-complete-button svg { width: 9px; height: 9px; }
+.task-complete-button.is-done { border-color: transparent; background: transparent; color: var(--green); }
+.task-complete-button:hover { border-color: var(--accent); background: transparent; }
+.task-complete-button.is-done:hover { border-color: transparent; background: transparent; color: var(--green); }
 .task-view-card[draggable="true"] { cursor: grab; }
 .task-view-card[draggable="true"]:active { cursor: grabbing; }
 .task-view-card.is-dragging { opacity: .45; }
 .task-day-column.is-drop-target, .task-kanban-column.is-drop-target, .task-eisenhower-quadrant.is-drop-target { border-color: var(--accent); background: var(--accent-soft); box-shadow: inset 0 0 0 2px var(--accent); }
 .task-view-card.is-complete { opacity: .7; }
 .task-view-title { display: block; width: 100%; padding: 0; border: 0; color: var(--ink); background: transparent; font-size: 11px; font-weight: 600; text-align: left; cursor: pointer; overflow-wrap: anywhere; }
+.task-view-title.is-complete { text-decoration: line-through; text-decoration-thickness: 1px; }
 .task-view-title:hover { color: var(--accent); }
 .task-view-card .task-meta { gap: 5px; }
 .task-view-card .tag { padding: 2px 5px; font-size: 8px; }
